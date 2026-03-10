@@ -48,9 +48,3 @@
 - 已提供实现细节文档与 QA 对照。
 - 代码实现保持“尽量简洁”：清理了 tokenizer 热路径中的进度条/打印，统一了 `encode` 与 `encode_iterable` 路径，保留必要核心逻辑。
 
-## E. 5.3 之后训练主循环能力
-
-- **训练主循环（LR 调度 + 前后向 + grad clip + eval + checkpoint）**
-  - 结果：已实现。
-  - 代码入口：`cs336_basics.lmtrain.TrainingConfig`、`estimate_loss`、`train_language_model`。
-  - 回归验证：新增逻辑不影响既有单元测试（模型/优化器/数据/序列化相关用例持续通过）。
