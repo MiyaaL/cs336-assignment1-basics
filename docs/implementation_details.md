@@ -69,3 +69,4 @@
   - 固定 `torch`, `cuda` 版本组合；
   - tokenizer 训练放 CPU，模型训练放 GPU；
   - 使用 bf16/fp16 + grad accumulation 控制显存。
+
