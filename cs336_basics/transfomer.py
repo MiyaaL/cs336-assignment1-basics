@@ -171,6 +171,10 @@ def multihead_self_attention_with_rope(d_model: int,
     v = einops.einsum(in_features, v_proj_weights, "batch seq_len d_in, num_heads d_v d_in -> batch num_heads seq_len d_v")
 
     rope = RotaryPositionalEmbedding(theta, d_model // num_heads, max_seq_len)
+    if token_positions is None:
+        token_positions = torch.arange(seq_len, device=in_features.device).unsqueeze(0).expand(in_features.shape[0], -1)
+    if token_positions.dim() == 2:
+        token_positions = token_positions.unsqueeze(1).expand(-1, num_heads, -1)
     q_with_rope = rope(q, token_positions)
     k_with_rope = rope(k, token_positions)
 

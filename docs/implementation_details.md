@@ -70,3 +70,19 @@
   - tokenizer 训练放 CPU，模型训练放 GPU；
   - 使用 bf16/fp16 + grad accumulation 控制显存。
 
+## 5. 5.3 之后训练逻辑补全
+
+实现文件：`cs336_basics/lmtrain.py`。
+
+新增了可直接用于训练脚本的训练环节函数：
+- `TrainingConfig`：集中管理训练超参数（batch/context/max_iters/lr schedule/grad clip/eval/checkpoint 等）。
+- `estimate_loss(...)`：在验证集上按多个 batch 估计平均 loss（`@torch.no_grad()`）。
+- `train_language_model(...)`：
+  - 每步按 warmup+cosine 更新学习率；
+  - 调用 `data_loader` 采样 batch；
+  - 前向 + `cross_entropy` 计算 LM loss；
+  - 反向、梯度裁剪、优化器更新；
+  - 按 `eval_interval` 记录 train/val loss；
+  - 按 `checkpoint_interval` 保存检查点。
+
+这些函数不破坏原有作业测试接口，同时提供了“可训练”的完整主循环能力。

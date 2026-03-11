@@ -8,14 +8,40 @@ import numpy as np
 import torch
 
 from cs336_basics.lmtrain import AdamW, TrainingConfig, load_checkpoint, save_checkpoint, train_language_model
+from cs336_basics.tokenizer import Tokenizer
 from cs336_basics.transfomer import TransformerLM
 
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Minimal training script for CS336 Assignment 1 model")
-    p.add_argument("--train-data", type=Path, required=True, help="Path to train token ids (.npy, 1D int array)")
-    p.add_argument("--val-data", type=Path, default=None, help="Path to val token ids (.npy, 1D int array)")
+    p.add_argument(
+        "--train-data",
+        type=Path,
+        required=True,
+        help="Path to train data: .npy token ids OR raw .txt/.text/.jsonl text",
+    )
+    p.add_argument(
+        "--val-data",
+        type=Path,
+        default=None,
+        help="Path to val data: .npy token ids OR raw .txt/.text/.jsonl text",
+    )
     p.add_argument("--out-dir", type=Path, default=Path("runs/default"), help="Output directory")
+
+    # tokenizer (required if train/val data is raw text)
+    p.add_argument("--tokenizer-vocab", type=Path, default=None, help="Path to tokenizer vocab.json")
+    p.add_argument("--tokenizer-merges", type=Path, default=None, help="Path to tokenizer merges.txt")
+    p.add_argument(
+        "--special-token",
+        action="append",
+        default=["<|endoftext|>"],
+        help="Special token passed to tokenizer (can be repeated)",
+    )
+    p.add_argument(
+        "--cache-tokenized",
+        action="store_true",
+        help="When reading raw text, cache tokenized ids to <input>.ids.npy",
+    )
 
     # model
     p.add_argument("--vocab-size", type=int, required=True)
@@ -47,7 +73,7 @@ def parse_args() -> argparse.Namespace:
     return p.parse_args()
 
 
-def _load_dataset(path: Path) -> np.ndarray:
+def _load_npy_ids(path: Path) -> np.ndarray:
     arr = np.load(path)
     if arr.ndim != 1:
         raise ValueError(f"Expected 1D token-id array at {path}, got shape={arr.shape}")
@@ -56,14 +82,54 @@ def _load_dataset(path: Path) -> np.ndarray:
     return arr.astype(np.int64, copy=False)
 
 
+def _build_tokenizer(args: argparse.Namespace) -> Tokenizer:
+    if args.tokenizer_vocab is None or args.tokenizer_merges is None:
+        raise ValueError(
+            "Raw text input requires --tokenizer-vocab and --tokenizer-merges. "
+            "Use tests/fixtures/gpt2_vocab.json and tests/fixtures/gpt2_merges.txt, "
+            "or your own trained tokenizer files."
+        )
+    special_tokens = list(dict.fromkeys(args.special_token))
+    return Tokenizer.from_files(
+        vocab_filepath=str(args.tokenizer_vocab),
+        merges_filepath=str(args.tokenizer_merges),
+        special_tokens=special_tokens,
+    )
+
+
+def _text_to_ids(path: Path, tokenizer: Tokenizer) -> np.ndarray:
+    with open(path, encoding="utf-8") as f:
+        return np.fromiter(tokenizer.encode_iterable(f), dtype=np.int64)
+
+
+def _load_dataset(path: Path, args: argparse.Namespace, split_name: str) -> np.ndarray:
+    if path.suffix == ".npy":
+        return _load_npy_ids(path)
+
+    cache_path = path.with_suffix(path.suffix + ".ids.npy")
+    if args.cache_tokenized and cache_path.exists():
+        print(f"[{split_name}] loading tokenized cache: {cache_path}")
+        return _load_npy_ids(cache_path)
+
+    print(f"[{split_name}] tokenizing raw text from: {path}")
+    tokenizer = _build_tokenizer(args)
+    ids = _text_to_ids(path, tokenizer)
+
+    if args.cache_tokenized:
+        np.save(cache_path, ids)
+        print(f"[{split_name}] saved tokenized cache: {cache_path}")
+
+    return ids
+
+
 def main() -> None:
     args = parse_args()
     args.out_dir.mkdir(parents=True, exist_ok=True)
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
 
-    train_ids = _load_dataset(args.train_data)
-    val_ids = _load_dataset(args.val_data) if args.val_data is not None else None
+    train_ids = _load_dataset(args.train_data, args, "train")
+    val_ids = _load_dataset(args.val_data, args, "val") if args.val_data is not None else None
 
     model = TransformerLM(
         vocab_size=args.vocab_size,
